@@ -17,7 +17,7 @@ SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-st.set_page_config(page_title="SEO Rezult Text Master v6.0", layout="wide")
+st.set_page_config(page_title="SEO Rezult Text Master v7.0", layout="wide")
 
 # =========================
 # 🔐 АВТОРИЗАЦИЯ
@@ -57,10 +57,18 @@ with st.sidebar:
 # 🧠 ОСНОВНОЙ ИНТЕРФЕЙС
 # =========================
 if st.session_state.user:
-    st.title("🚀 SEO Rezult Text Master v6.0")
+    email = st.session_state.user["email"]
+    is_admin = email == "admin@seo-rezult.ru"
+
+    st.title("🚀 SEO Rezult Text Master v7.0")
     st.caption("Генератор SEO-текстов с LSI-анализом, уникальностью и естественностью")
 
-    tabs = st.tabs(["📝 Генерация", "📂 Мои тексты"])
+    # Добавляем вкладку администратора только если e-mail = admin@seo-rezult.ru
+    tab_labels = ["📝 Генерация", "📂 Мои тексты"]
+    if is_admin:
+        tab_labels.append("🧑‍💼 Админ-панель")
+
+    tabs = st.tabs(tab_labels)
 
     # -----------------------------------------------------
     # Вкладка 1 — Генерация текста
@@ -170,6 +178,7 @@ LSI-фразы: {lsi}.
             text = perplexity_generate(build_prompt(topic, site, competitors, lsi_words, banned, keywords, symbols))
             text = clean_text(text)
 
+            # Проверка на LSI
             iteration = 1
             progress = st.progress(0)
             while True:
@@ -205,22 +214,11 @@ LSI-фразы: {lsi}.
             st.info("🧠 Анализ естественности текста...")
             human_report = analyze_humanness(text)
             st.table(human_report.items())
-            score = human_report["Оценка естественности (%)"]
-
-            if score >= 85:
-                st.success(f"✅ Текст выглядит естественным ({score}%)")
-            elif score >= 70:
-                st.info(f"🟢 В целом естественный ({score}%)")
-            elif score >= 50:
-                st.warning(f"🟠 Частично машинный ({score}%)")
-            else:
-                st.error(f"🔴 Похож на ИИ ({score}%) — доработай.")
-
-            st.markdown(f"[🧩 Проверить на сайте AI Detector](https://aidetectorwriter.com/ru/?text={quote(text)})")
 
             export_docx(text, report, human_report)
             supabase.table("history").insert({
                 "user_id": st.session_state.user["id"],
+                "email": st.session_state.user["email"],
                 "date": datetime.now().isoformat(),
                 "topic": topic,
                 "symbols": symbols,
@@ -232,7 +230,7 @@ LSI-фразы: {lsi}.
     # Вкладка 2 — История текстов
     # -----------------------------------------------------
     with tabs[1]:
-        st.subheader("📂 История текстов")
+        st.subheader("📂 Мои тексты")
         user_id = st.session_state.user["id"]
         data = supabase.table("history").select("*").eq("user_id", user_id).order("date", desc=True).execute()
 
@@ -249,5 +247,24 @@ LSI-фразы: {lsi}.
                             st.rerun()
         else:
             st.info("Пока нет сохранённых текстов.")
+
+    # -----------------------------------------------------
+    # Вкладка 3 — Админ-панель (только admin)
+    # -----------------------------------------------------
+    if is_admin:
+        with tabs[2]:
+            st.subheader("🧑‍💼 Админ-панель: все тексты пользователей")
+            data = supabase.table("history").select("*").order("date", desc=True).execute()
+
+            if data.data:
+                for row in data.data:
+                    with st.expander(f"{row['email']} — {row['topic']} — {row['date']}"):
+                        st.write(row["text"][:400] + "...")
+                        st.caption(f"Символов: {row['symbols']}, LSI: {row['lsi_count']}")
+                        if st.button(f"🗑 Удалить {row['id']}", key=f"adm_{row['id']}"):
+                            supabase.table("history").delete().eq("id", row["id"]).execute()
+                            st.rerun()
+            else:
+                st.info("База пуста.")
 else:
     st.info("🔑 Войдите или зарегистрируйтесь, чтобы использовать генератор.")
