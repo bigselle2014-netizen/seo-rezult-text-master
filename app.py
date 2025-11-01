@@ -79,7 +79,7 @@ if st.session_state.user:
     email = st.session_state.user["email"]
     is_admin = email == "admin@seo-rezult.ru"
 
-    st.title("🚀 SEO Rezult Text Master v7.3")
+    st.title("🚀 SEO Rezult Text Master")
     st.caption("Генератор SEO-текстов с LSI-анализом, проверкой уникальности и естественности")
 
     tab_labels = ["📝 Генерация", "📂 Мои тексты"]
