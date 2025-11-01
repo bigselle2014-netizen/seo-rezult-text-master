@@ -12,12 +12,11 @@ from dotenv import load_dotenv
 load_dotenv()
 PPLX_API_KEY = os.getenv("PPLX_API_KEY") or st.secrets.get("PPLX_API_KEY")
 TEXT_RU_KEY = os.getenv("TEXT_RU_KEY") or st.secrets.get("TEXT_RU_KEY")
-
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-st.set_page_config(page_title="SEO Rezult Text Master v7.0", layout="wide")
+st.set_page_config(page_title="SEO Rezult Text Master v7.3", layout="wide")
 
 # =========================
 # 🔐 АВТОРИЗАЦИЯ
@@ -38,20 +37,40 @@ with st.sidebar:
         email = st.text_input("Email")
         password = st.text_input("Пароль", type="password")
 
-        if st.button("Войти"):
+        if st.button("Продолжить"):
             try:
+                # --- РЕГИСТРАЦИЯ ---
                 if mode == "Регистрация":
-                    res = supabase.auth.sign_up({"email": email, "password": password})
+                    # 🛡️ Запрещаем регистрацию под админским email
+                    if email.lower().strip() == "admin@seo-rezult.ru":
+                        st.error("Регистрация под этим адресом запрещена. Обратитесь к администратору.")
+                    else:
+                        # Проверяем — есть ли уже такой email
+                        existing_user = supabase.table("auth.users").select("email").eq("email", email).execute()
+                        if existing_user.data:
+                            st.warning("⚠️ Такой email уже зарегистрирован. Попробуйте войти.")
+                        else:
+                            res = supabase.auth.sign_up({"email": email, "password": password})
+                            if res.user:
+                                st.success("✅ Регистрация прошла успешно! Теперь войдите.")
+                            else:
+                                st.error("Не удалось зарегистрировать пользователя.")
+                # --- ВХОД ---
                 else:
                     res = supabase.auth.sign_in_with_password({"email": email, "password": password})
-
-                if res.user:
-                    st.session_state.user = {"email": email, "id": res.user.id}
-                    st.rerun()
-                else:
-                    st.error("Ошибка авторизации.")
+                    if res.user:
+                        st.session_state.user = {"email": email, "id": res.user.id}
+                        st.rerun()
+                    else:
+                        st.error("Неверные данные для входа.")
             except Exception as e:
-                st.error(f"Ошибка входа: {e}")
+                msg = str(e)
+                if "user_already_exists" in msg:
+                    st.warning("⚠️ Такой email уже зарегистрирован. Попробуйте войти.")
+                elif "invalid_credentials" in msg:
+                    st.error("❌ Неверный email или пароль.")
+                else:
+                    st.error(f"Ошибка: {msg}")
 
 # =========================
 # 🧠 ОСНОВНОЙ ИНТЕРФЕЙС
@@ -60,10 +79,9 @@ if st.session_state.user:
     email = st.session_state.user["email"]
     is_admin = email == "admin@seo-rezult.ru"
 
-    st.title("🚀 SEO Rezult Text Master v7.0")
-    st.caption("Генератор SEO-текстов с LSI-анализом, уникальностью и естественностью")
+    st.title("🚀 SEO Rezult Text Master v7.3")
+    st.caption("Генератор SEO-текстов с LSI-анализом, проверкой уникальности и естественности")
 
-    # Добавляем вкладку администратора только если e-mail = admin@seo-rezult.ru
     tab_labels = ["📝 Генерация", "📂 Мои тексты"]
     if is_admin:
         tab_labels.append("🧑‍💼 Админ-панель")
@@ -71,7 +89,7 @@ if st.session_state.user:
     tabs = st.tabs(tab_labels)
 
     # -----------------------------------------------------
-    # Вкладка 1 — Генерация текста
+    # Вкладка 1 — Генерация
     # -----------------------------------------------------
     with tabs[0]:
         with st.form("input_form"):
@@ -84,9 +102,6 @@ if st.session_state.user:
             symbols = st.number_input("Количество символов", value=8000, step=500)
             submitted = st.form_submit_button("Сгенерировать текст")
 
-        # =======================
-        # 🔧 ФУНКЦИИ
-        # =======================
         def perplexity_generate(prompt: str):
             headers = {"Authorization": f"Bearer {PPLX_API_KEY}", "Content-Type": "application/json"}
             payload = {
@@ -110,7 +125,7 @@ if st.session_state.user:
 LSI-фразы: {lsi}.
 Не используй слова: {banned}.
 Объём ≈ {symbols} символов.
-Пиши живым языком, без шаблонов, максимально естественно.
+Пиши живым языком, без шаблонов и “ИИ-тона”.
 """
 
         def clean_text(text):
@@ -118,21 +133,6 @@ LSI-фразы: {lsi}.
 
         def check_missing_lsi(text, lsi_list):
             return [w for w in lsi_list if w.lower() not in text.lower()]
-
-        def export_docx(text, report, human_report, filename="seo_text.docx"):
-            doc = Document()
-            doc.add_heading("SEO Rezult Text Master — Отчёт", level=1)
-            doc.add_paragraph(text)
-            doc.add_page_break()
-            doc.add_heading("📊 SEO-анализ", level=2)
-            for k, v in report.items():
-                doc.add_paragraph(f"{k}: {v}")
-            doc.add_heading("🧠 Анализ естественности", level=2)
-            for k, v in human_report.items():
-                doc.add_paragraph(f"{k}: {v}")
-            doc.save(filename)
-            with open(filename, "rb") as f:
-                st.download_button("📥 Скачать DOCX-отчёт", f, file_name=filename)
 
         def seo_score(text, keywords):
             words = re.findall(r"\w+", text.lower())
@@ -169,16 +169,26 @@ LSI-фразы: {lsi}.
                 "Оценка естественности (%)": human_score
             }
 
-        # =======================
-        # 🚀 ГЕНЕРАЦИЯ
-        # =======================
+        def export_docx(text, report, human_report, filename="seo_text.docx"):
+            doc = Document()
+            doc.add_heading("SEO Rezult Text Master — Отчёт", level=1)
+            doc.add_paragraph(text)
+            doc.add_page_break()
+            doc.add_heading("📊 SEO-анализ", level=2)
+            for k, v in report.items():
+                doc.add_paragraph(f"{k}: {v}")
+            doc.add_heading("🧠 Анализ естественности", level=2)
+            for k, v in human_report.items():
+                doc.add_paragraph(f"{k}: {v}")
+            doc.save(filename)
+            with open(filename, "rb") as f:
+                st.download_button("📥 Скачать DOCX-отчёт", f, file_name=filename)
+
         if submitted:
             st.info("⚙️ Этап 1: Генерация текста через Perplexity...")
             lsi_list = [w.strip() for w in lsi_words.split(",") if w.strip()]
             text = perplexity_generate(build_prompt(topic, site, competitors, lsi_words, banned, keywords, symbols))
             text = clean_text(text)
-
-            # Проверка на LSI
             iteration = 1
             progress = st.progress(0)
             while True:
@@ -190,12 +200,11 @@ LSI-фразы: {lsi}.
                 text += "\n" + clean_text(addition)
                 iteration += 1
                 progress.progress(min(90, iteration * 20))
-
             progress.progress(100)
             st.success("✅ Текст готов!")
             st.text_area("Результат", text, height=400)
 
-            # Проверка уникальности
+            # === Проверка уникальности ===
             st.info("🔎 Проверка уникальности через Text.ru API...")
             r = requests.post("https://api.text.ru/post", data={"text": text, "userkey": TEXT_RU_KEY})
             if r.ok:
@@ -205,13 +214,9 @@ LSI-фразы: {lsi}.
             else:
                 st.warning("Ошибка при проверке уникальности.")
 
-            # SEO-анализ
-            st.info("📊 SEO-анализ текста...")
             report = seo_score(text, keywords)
             st.table(report.items())
 
-            # Анализ естественности
-            st.info("🧠 Анализ естественности текста...")
             human_report = analyze_humanness(text)
             st.table(human_report.items())
 
@@ -227,40 +232,33 @@ LSI-фразы: {lsi}.
             }).execute()
 
     # -----------------------------------------------------
-    # Вкладка 2 — История текстов
+    # Вкладка 2 — Мои тексты
     # -----------------------------------------------------
     with tabs[1]:
         st.subheader("📂 Мои тексты")
         user_id = st.session_state.user["id"]
         data = supabase.table("history").select("*").eq("user_id", user_id).order("date", desc=True).execute()
-
         if data.data:
             for row in data.data:
                 with st.expander(f"{row['topic']} — {row['date']}"):
                     st.write(row["text"][:400] + "...")
-                    col1, col2 = st.columns([0.8, 0.2])
-                    with col1:
-                        st.caption(f"Символов: {row['symbols']}, LSI: {row['lsi_count']}")
-                    with col2:
-                        if st.button("🗑 Удалить", key=row["id"]):
-                            supabase.table("history").delete().eq("id", row["id"]).execute()
-                            st.rerun()
+                    if st.button("🗑 Удалить", key=row["id"]):
+                        supabase.table("history").delete().eq("id", row["id"]).execute()
+                        st.rerun()
         else:
             st.info("Пока нет сохранённых текстов.")
 
     # -----------------------------------------------------
-    # Вкладка 3 — Админ-панель (только admin)
+    # Вкладка 3 — Админ-панель
     # -----------------------------------------------------
     if is_admin:
         with tabs[2]:
             st.subheader("🧑‍💼 Админ-панель: все тексты пользователей")
             data = supabase.table("history").select("*").order("date", desc=True).execute()
-
             if data.data:
                 for row in data.data:
                     with st.expander(f"{row['email']} — {row['topic']} — {row['date']}"):
                         st.write(row["text"][:400] + "...")
-                        st.caption(f"Символов: {row['symbols']}, LSI: {row['lsi_count']}")
                         if st.button(f"🗑 Удалить {row['id']}", key=f"adm_{row['id']}"):
                             supabase.table("history").delete().eq("id", row["id"]).execute()
                             st.rerun()
