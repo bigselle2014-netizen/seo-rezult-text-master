@@ -1,5 +1,6 @@
 streamlit
-requests
 python-dotenv
+requests
+numpy
 python-docx
-sqlite-utils
+supabase
