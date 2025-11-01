@@ -32,7 +32,7 @@ with st.sidebar:
         st.success(f"Добро пожаловать, {st.session_state.user['email']}!")
         if st.button("Выйти"):
             st.session_state.user = None
-            st.experimental_rerun()
+            st.rerun()
     else:
         mode = st.radio("Выберите действие:", ["Вход", "Регистрация"])
         email = st.text_input("Email")
@@ -47,7 +47,7 @@ with st.sidebar:
 
                 if res.user:
                     st.session_state.user = {"email": email, "id": res.user.id}
-                    st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.error("Ошибка авторизации.")
             except Exception as e:
@@ -170,7 +170,6 @@ LSI-фразы: {lsi}.
             text = perplexity_generate(build_prompt(topic, site, competitors, lsi_words, banned, keywords, symbols))
             text = clean_text(text)
 
-            # Проверка на LSI
             iteration = 1
             progress = st.progress(0)
             while True:
@@ -247,7 +246,7 @@ LSI-фразы: {lsi}.
                     with col2:
                         if st.button("🗑 Удалить", key=row["id"]):
                             supabase.table("history").delete().eq("id", row["id"]).execute()
-                            st.experimental_rerun()
+                            st.rerun()
         else:
             st.info("Пока нет сохранённых текстов.")
 else:
