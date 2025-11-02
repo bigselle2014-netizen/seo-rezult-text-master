@@ -37,3 +37,20 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+import threading, time, requests
+
+def keep_alive():
+    def run():
+        url = "https://text-master.seo-rezult.ru"
+        while True:
+            try:
+                r = requests.get(url, timeout=10)
+                print(f"[KeepAlive] Пинг {r.status_code}")
+            except Exception as e:
+                print("[KeepAlive] Ошибка:", e)
+            time.sleep(300)
+
+    thread = threading.Thread(target=run)
+    thread.daemon = True
+    thread.start()
