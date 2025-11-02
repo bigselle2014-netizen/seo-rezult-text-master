@@ -7,6 +7,7 @@ from datetime import datetime
 from urllib.parse import quote
 from docx import Document
 from supabase import create_client, Client
+from keep_alive import keep_alive
 
 # =========================
 # 🔐 КЛЮЧИ И КЛИЕНТЫ (ENV)
@@ -54,12 +55,10 @@ with st.sidebar:
         if st.button("Продолжить"):
             try:
                 if mode == "Регистрация":
-                    # Запрещаем регистрацию под админским адресом
                     if email.strip().lower() == "admin@seo-rezult.ru":
-                        st.error("Регистрация под этим адресом запрещена. Обратитесь к администратору.")
+                        st.error("Регистрация под этим адресом запрещена.")
                     else:
                         res = supabase.auth.sign_up({"email": email, "password": password})
-                        # У Supabase sign_up вернёт ошибку, если email уже существует.
                         if getattr(res, "user", None):
                             st.success("✅ Регистрация успешна. Теперь войдите.")
                         else:
@@ -137,7 +136,7 @@ def analyze_humanness(text: str) -> dict:
     sentences = [s.strip() for s in re.split(r"[.!?]", text) if s.strip()]
     words = re.findall(r"\w+", text.lower())
     unique_words = len(set(words)) or 1
-    perplexity = round(np.exp(len(words) / unique_words), 2)  # эвристика
+    perplexity = round(np.exp(len(words) / unique_words), 2)
     lens = [len(s.split()) for s in sentences] or [0]
     burstiness = round(np.std(lens) / (np.mean(lens) + 1e-5), 2)
     bigrams = [f"{words[i]} {words[i+1]}" for i in range(max(0, len(words)-1))]
@@ -146,10 +145,10 @@ def analyze_humanness(text: str) -> dict:
     human_score = 100 - ((perplexity / 50) * 20 + (repeat_ratio / 2) - (burstiness * 10))
     human_score = max(0, min(100, round(human_score, 1)))
     return {
-        "Перплексия (предсказуемость)": perplexity,
-        "Разнообразие предложений (Burstiness)": burstiness,
+        "Перплексия": perplexity,
+        "Разнообразие предложений": burstiness,
         "Повторяемость фраз (%)": repeat_ratio,
-        "Оценка естественности (%)": human_score,
+        "Естественность текста (%)": human_score,
     }
 
 def export_docx(text: str, report: dict, human_report: dict, filename="seo_text.docx"):
@@ -186,7 +185,7 @@ if is_admin:
 tabs = st.tabs(tab_labels)
 
 # -------------------------
-# 📝 Вкладка 1 — Генерация
+# 📝 Генерация
 # -------------------------
 with tabs[0]:
     with st.form("input_form"):
@@ -201,21 +200,19 @@ with tabs[0]:
 
     if submitted:
         lsi_list = [w.strip() for w in lsi_words.split(",") if w.strip()]
-        st.info("⚙️ Этап 1: Генерация первичного текста...")
+        st.info("⚙️ Этап 1: Генерация текста...")
         base = build_prompt(topic, site, competitors, lsi_words, banned, keywords, symbols)
         text = clean_text(perplexity_generate(base))
 
-        # Итерации по LSI
         iteration = 1
         progress = st.progress(0)
         while True:
             missing = check_missing_lsi(text, lsi_list)
             if not missing:
                 break
-            st.warning(f"Этап 2: доработка LSI — отсутствует {len(missing)} слов(а).")
+            st.warning(f"Этап 2: добавляем {len(missing)} LSI-слов(а)...")
             fix_prompt = (
-                f"Спасибо за текст, но ты не учёл {len(missing)} LSI-слов. "
-                f"Прошу добавить абзацы с точным вхождением: {', '.join(missing)}.\n\n"
+                f"Добавь в текст слова {', '.join(missing)}.\n"
                 f"Исходный текст:\n{text}"
             )
             addition = clean_text(perplexity_generate(fix_prompt))
@@ -225,41 +222,33 @@ with tabs[0]:
         progress.progress(100)
 
         st.success("✅ Текст готов!")
-        st.text_area("Результат", text, height=420)
+        st.text_area("Результат", text, height=400)
 
-        # Проверка уникальности (Text.ru)
         st.info("🔎 Проверка уникальности (Text.ru)…")
         try:
             r = requests.post("https://api.text.ru/post", data={"text": text, "userkey": TEXT_RU_KEY}, timeout=30)
             if r.ok and "text_uid" in r.json():
                 uid = r.json()["text_uid"]
-                # Пуллим результат (обычно быстро; без цикла, один запрос)
                 res = requests.get("https://api.text.ru/post", params={"uid": uid, "userkey": TEXT_RU_KEY}, timeout=30).json()
                 uniq = res.get("text_unique", "?")
                 st.write(f"**Уникальность:** {uniq}%")
-            else:
-                st.warning("Не удалось отправить текст на проверку уникальности.")
         except Exception as e:
             st.warning(f"Text.ru недоступен: {e}")
 
-        # SEO-метрики
         st.info("📊 SEO-анализ")
         report = seo_score(text, keywords)
         st.table(report.items())
 
-        # Естественность
         st.info("🧠 Анализ естественности")
         human_report = analyze_humanness(text)
         st.table(human_report.items())
 
-        # Скачивание отчёта
         export_docx(text, report, human_report)
 
-        # Сохранение в историю (Supabase)
         try:
             supabase.table("history").insert({
                 "user_id": st.session_state.user["id"],
-                "email": st.session_state.user["email"],
+                "email": email,
                 "date": datetime.now().isoformat(),
                 "topic": topic,
                 "symbols": int(symbols),
@@ -269,10 +258,10 @@ with tabs[0]:
         except Exception as e:
             st.warning(f"Не удалось сохранить историю: {e}")
 
-        st.markdown(f"[🧩 Доп.проверка на AI Detector](https://aidetectorwriter.com/ru/?text={quote(text)})")
+        st.markdown(f"[🧩 Проверить на AI Detector](https://aidetectorwriter.com/ru/?text={quote(text)})")
 
 # -------------------------
-# 📂 Вкладка 2 — Мои тексты
+# 📂 Мои тексты
 # -------------------------
 with tabs[1]:
     st.subheader("📂 Мои тексты")
@@ -284,18 +273,15 @@ with tabs[1]:
         for row in rows:
             with st.expander(f"{row.get('topic','—')} — {row.get('date','')}"):
                 st.write(row.get("text","")[:600] + "…")
-                c1, c2 = st.columns([0.7, 0.3])
-                with c1:
-                    st.caption(f"Символов: {row.get('symbols','?')}, LSI: {row.get('lsi_count','?')}")
-                with c2:
-                    if st.button("🗑 Удалить", key=f"del_{row['id']}"):
-                        supabase.table("history").delete().eq("id", row["id"]).execute()
-                        st.rerun()
+                st.caption(f"Символов: {row.get('symbols','?')}, LSI: {row.get('lsi_count','?')}")
+                if st.button(f"🗑 Удалить", key=f"del_{row['id']}"):
+                    supabase.table("history").delete().eq("id", row["id"]).execute()
+                    st.rerun()
     except Exception as e:
         st.warning(f"Ошибка загрузки истории: {e}")
 
 # -------------------------
-# 🧑‍💼 Вкладка 3 — Админ
+# 🧑‍💼 Админ-панель
 # -------------------------
 if is_admin and len(tabs) > 2:
     with tabs[2]:
@@ -315,5 +301,7 @@ if is_admin and len(tabs) > 2:
         except Exception as e:
             st.warning(f"Ошибка админ-панели: {e}")
 
-from keep_alive import keep_alive
+# =========================
+# 🚀 Keep Alive
+# =========================
 keep_alive()
