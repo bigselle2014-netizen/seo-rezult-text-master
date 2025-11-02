@@ -3,6 +3,4 @@ python-dotenv
 requests
 numpy
 python-docx
-supabase
-requests
-python-dotenv
+supabase-py
