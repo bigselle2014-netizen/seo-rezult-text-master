@@ -314,3 +314,6 @@ if is_admin and len(tabs) > 2:
                         st.rerun()
         except Exception as e:
             st.warning(f"Ошибка админ-панели: {e}")
+
+from keep_alive import keep_alive
+keep_alive()
