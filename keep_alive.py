@@ -2,14 +2,12 @@ import os
 import requests
 import time
 
-# --- НАСТРОЙКИ ---
-RENDER_API_KEY = os.getenv("RENDER_API_KEY")  # ключ API Render
-SERVICE_ID = "srv-d43f4kpr0fns73evb16g"       # твой Service ID (см. в Render Dashboard)
-CHECK_URL = "https://text-master.seo-rezult.ru"  # адрес твоего сайта
-CHECK_INTERVAL = 600  # интервал проверки в секундах (10 минут)
+RENDER_API_KEY = os.getenv("RENDER_API_KEY")
+SERVICE_ID = "srv-d43f4kpr0fns73evb16g"  # <-- твой ID сервиса в Render
+CHECK_URL = "https://text-master.seo-rezult.ru"
+CHECK_INTERVAL = 600  # каждые 10 минут
 
 def check_site():
-    """Проверка доступности сайта"""
     try:
         r = requests.get(CHECK_URL, timeout=10)
         return r.status_code == 200
@@ -18,7 +16,6 @@ def check_site():
         return False
 
 def restart_render_service():
-    """Перезапуск Render-сервиса"""
     url = f"https://api.render.com/v1/services/{SERVICE_ID}/deploys"
     headers = {"Authorization": f"Bearer {RENDER_API_KEY}", "Content-Type": "application/json"}
     data = {"clearCache": True}
